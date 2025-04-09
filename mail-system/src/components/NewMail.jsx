@@ -43,6 +43,7 @@ function NewMail() {
   const [validationError, setValidationError] = useState('');
   const [superiorDialogOpen, setSuperiorDialogOpen] = useState(false);
   const [senderSuperior, setSenderSuperior] = useState(null);
+  const [success, setSuccess] = useState('');
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -94,7 +95,11 @@ function NewMail() {
       // First check if superior is included
       if (senderSuperior) {
         const recipientList = recipients.split(',').map(r => r.trim());
-        if (!recipientList.includes(senderSuperior)) {
+        const toList = formData.to.split(',').map(r => r.trim());
+        const ccList = formData.cc ? formData.cc.split(',').map(r => r.trim()) : [];
+        
+        // Check if superior is in either TO or CC
+        if (!toList.includes(senderSuperior) && !ccList.includes(senderSuperior)) {
           setSuperiorDialogOpen(true);
           return false;
         }
@@ -110,6 +115,7 @@ function NewMail() {
       });
 
       const data = await response.json();
+      console.log(data);
       
       if (!response.ok) {
         if (data.invalidRecipients) {
@@ -151,60 +157,74 @@ function NewMail() {
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setValidationError('');
-
-    // Validate TO field
-    if (!formData.to.trim()) {
-      setValidationError('Please enter at least one recipient in the TO field');
-      return;
-    }
-
-    // Validate recipients
-    const allRecipients = [formData.to, formData.cc]
-      .filter(Boolean)
-      .join(',');
-    
-    const isValid = await validateRecipients(allRecipients);
-    if (!isValid) {
-      return;
-    }
-
+  const handleSend = async () => {
     try {
-      // Create FormData for file upload
-      const formDataToSend = new FormData();
-      formDataToSend.append('recipients', formData.to);
-      if (formData.cc) {
-        formDataToSend.append('cc', formData.cc);
+      setError('');
+      setSuccess('');
+      
+      // Debug: Check token
+      const token = localStorage.getItem('token');
+      console.log('Current token:', token);
+      
+      if (!token) {
+        console.log('No token found in localStorage');
+        setError('Please login again');
+        navigate('/login');
+        return;
       }
-      formDataToSend.append('subject', formData.subject);
-      formDataToSend.append('body', formData.message);
-      formDataToSend.append('isDraft', 'false');
 
-      // Append each file
-      attachments.forEach((file) => {
-        formDataToSend.append('attachments', file);
+      // Validate recipients
+      const validationError = validateRecipients(formData.to + (formData.cc ? `,${formData.cc}` : ''));
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+
+      // Check if superior is included
+      if (senderSuperior && !validateRecipients(formData.to + (formData.cc ? `,${senderSuperior}` : ''))) {
+        setSuperiorDialogOpen(true);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('to', JSON.stringify(formData.to));
+      formData.append('cc', JSON.stringify(formData.cc));
+      formData.append('subject', formData.subject);
+      formData.append('body', formData.message);
+      formData.append('isDraft', 'false');
+
+      // Add attachments if any
+      attachments.forEach((file, index) => {
+        formData.append('attachments', file);
       });
 
-      // Send the request
-      const response = await fetch('http://localhost:3001/api/mail', {
+      console.log('Sending request with token:', token);
+      const response = await fetch('http://192.168.100.236:5000/api/mail', {
         method: 'POST',
-        body: formDataToSend,
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
       });
 
       if (!response.ok) {
-        throw new Error('Failed to send mail');
+        const errorData = await response.json();
+        console.error('Server error response:', errorData);
+        if (response.status === 401) {
+          console.log('Token expired or invalid');
+          setError('Your session has expired. Please login again.');
+          navigate('/login');
+          return;
+        }
+        throw new Error(errorData.error || 'Failed to send mail');
       }
 
-      // Reset form and navigate back
-      setFormData({ to: '', cc: '', subject: '', message: '' });
-      setAttachments([]);
-      navigate('/dashboard');
+      const data = await response.json();
+      setSuccess('Mail sent successfully!');
+      navigate('/mail');
     } catch (error) {
-      setError('Failed to send mail. Please try again.');
       console.error('Error sending mail:', error);
+      setError(error.message || 'Failed to send mail');
     }
   };
 
@@ -241,7 +261,7 @@ function NewMail() {
         formDataToSend.append('attachments', file);
       });
 
-      const response = await fetch('http://localhost:3001/api/mail/draft', {
+      const response = await fetch('http://192.168.100.236:5000/api/mail/draft', {
         method: 'POST',
         body: formDataToSend,
       });
@@ -293,7 +313,13 @@ function NewMail() {
           </Alert>
         )}
 
-        <form onSubmit={handleSubmit}>
+        {success && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            {success}
+          </Alert>
+        )}
+
+        <form onSubmit={handleSend}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {/* To Field */}
             <TextField

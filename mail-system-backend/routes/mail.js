@@ -4,6 +4,28 @@ const { poolPromise } = require('../config/db');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
+
+// Authentication middleware
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    console.log('No token provided in request');
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log('Token verified successfully:', decoded);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    console.error('Token verification failed:', error);
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+};
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -29,7 +51,7 @@ const upload = multer({
 });
 
 // Get all mails for a user
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const pool = await poolPromise;
     const result = await pool.request()
@@ -54,9 +76,31 @@ router.get('/', async (req, res) => {
 });
 
 // Send new mail with attachments
-router.post('/', upload.array('attachments'), async (req, res) => {
+router.post('/', authenticateToken, upload.array('attachments'), async (req, res) => {
   try {
+    // Log the decoded token and user information
+    console.log('Decoded token:', req.user);
+    console.log('User information:', req.user);
+
     const { recipients, subject, body, isDraft } = req.body;
+    
+    // Log the processed form data
+    console.log('Processed form data:', {
+      recipients,
+      subject,
+      body,
+      isDraft,
+      files: req.files ? req.files.length : 0
+    });
+
+    if (!recipients || !subject || !body) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    if (!req.user.UserID) {
+      return res.status(401).json({ error: 'Invalid user information' });
+    }
+
     const senderId = req.user.UserID;
     const pool = await poolPromise;
 
@@ -121,7 +165,7 @@ router.post('/', upload.array('attachments'), async (req, res) => {
 });
 
 // Save mail as draft
-router.post('/draft', upload.array('attachments'), async (req, res) => {
+router.post('/draft', authenticateToken, upload.array('attachments'), async (req, res) => {
   try {
     const { recipients, subject, body } = req.body;
     const senderId = req.user.UserID;
@@ -201,7 +245,7 @@ router.post('/validate-recipients', async (req, res) => {
     const result = await pool.request()
       .input('recipients', recipientList.join(','))
       .query(`
-        SELECT UserID,
+        SELECT UserID
         FROM Users
         WHERE UserID IN (SELECT value FROM STRING_SPLIT(@recipients, ','))
       `);
