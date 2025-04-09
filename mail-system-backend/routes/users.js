@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
+ 
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -23,6 +24,32 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 };
+
+// Get current user's information
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    console.log('Getting user info for:', req.user.userId);
+    
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('userId', req.user.userId)
+      .query(`
+        SELECT UserID, LVL, Superior
+        FROM Users
+        WHERE UserID = @userId
+      `);
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    console.log('User found:', result.recordset[0]);
+    res.json(result.recordset[0]);
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({ error: 'Failed to fetch user information' });
+  }
+});
 
 // Search users
 router.get('/search', async (req, res) => {
@@ -61,30 +88,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get current user's information
-router.get('/me', authenticateToken, async (req, res) => {
-  try {
-    console.log('Getting user info for:', req.user.UserID);
-    
-    const pool = await poolPromise;
-    const result = await pool.request()
-      .input('userId', req.user.UserID)
-      .query(`
-        SELECT UserID, LVL, Superior
-        FROM Users
-        WHERE UserID = @userId
-      `);
 
-    if (result.recordset.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    console.log('User found:', result.recordset[0]);
-    res.json(result.recordset[0]);
-  } catch (error) {
-    console.error('Error fetching user:', error);
-    res.status(500).json({ error: 'Failed to fetch user information' });
-  }
-});
 
 module.exports = router; 

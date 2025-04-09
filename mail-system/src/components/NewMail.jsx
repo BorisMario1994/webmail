@@ -74,15 +74,48 @@ function NewMail() {
 
   const fetchSenderSuperior = async () => {
     try {
+      const token = localStorage.getItem('token');
+      console.log('=== Debugging fetchSenderSuperior ===');
+      console.log('1. Token from localStorage:', token);
+      
+      if (!token) {
+        console.log('No token found for superior fetch');
+        setError('Please login again');
+        navigate('/login');
+        return;
+      }
+
+      console.log('2. Preparing request to /api/users/me');
+      console.log('3. Request headers:', {
+        'Authorization': `Bearer ${token}`
+      });
+
       const response = await fetch('http://192.168.100.236:5000/api/users/me', {
+        method: 'GET',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         }
       });
+
+      console.log('4. Response status:', response.status);
+      console.log('5. Response headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          console.log('Token expired or invalid for superior fetch');
+          setError('Your session has expired. Please login again.');
+          navigate('/login');
+          return;
+        }
+        throw new Error('Failed to fetch superior information');
+      }
+
       const data = await response.json();
+      console.log('6. Response data:', data);
       setSenderSuperior(data.Superior);
     } catch (error) {
-      console.error('Error fetching sender superior:', error);
+      console.error('Error in fetchSenderSuperior:', error);
+      setError('Failed to fetch superior information');
     }
   };
 
