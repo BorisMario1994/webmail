@@ -197,8 +197,9 @@ function NewMail() {
       }));
     }
   };
-// ...existing code...
 
+
+  
 const sendMail = async () => {
   try {
     const token = localStorage.getItem('token');
@@ -218,12 +219,28 @@ const sendMail = async () => {
     const response = await fetch('http://192.168.100.236:5000/api/mail', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`
+         'Authorization': `Bearer ${localStorage.getItem('token')}`
       },
       body: mailFormData
     });
 
-    // ... rest of the sending logic
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Server error response:', errorData);
+      if (response.status === 401) {
+        console.log('Token expired or invalid');
+        setError('Your session has expired. Please login again.');
+        navigate('/login');
+        return;
+      }
+      throw new Error(errorData.error || 'Failed to send mail');
+    }
+
+    const data = await response.json();
+    setSuccess('Mail sent successfully!');
+    navigate('/mail');
+
   } catch (error) {
     console.error('Error sending mail:', error);
     setError(error.message || 'Failed to send mail');
@@ -263,7 +280,6 @@ const handleSend = async (e) => {
   // If we get here, either superior is included or not required
   await sendMail();
 };
-
 
   const handleSaveDraft = async () => {
     setError('');
