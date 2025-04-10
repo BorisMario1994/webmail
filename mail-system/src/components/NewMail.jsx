@@ -74,26 +74,33 @@ function NewMail() {
 
   const fetchSenderSuperior = async () => {
     try {
+      console.log('=== Frontend Debug: fetchSenderSuperior ===');
+      
+      // Get and log the token
       const token = localStorage.getItem('token');
-      console.log('=== Debugging fetchSenderSuperior ===');
       console.log('1. Token from localStorage:', token);
       
       if (!token) {
-        console.log('No token found for superior fetch');
+        console.log('No token found in localStorage');
         setError('Please login again');
         navigate('/login');
         return;
       }
 
-      console.log('2. Preparing request to /api/users/me');
-      console.log('3. Request headers:', {
-        'Authorization': `Bearer ${token}`
-      });
+      // Try to decode the token to see what's in it
+      try {
+        const tokenParts = token.split('.');
+        const payload = JSON.parse(atob(tokenParts[1]));
+        console.log('2. Decoded token payload:', payload);
+      } catch (e) {
+        console.log('2. Could not decode token:', e);
+      }
 
+      console.log('3. Making request to /api/users/me');
       const response = await fetch('http://192.168.100.236:5000/api/users/me', {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`
+           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
 
@@ -101,8 +108,9 @@ function NewMail() {
       console.log('5. Response headers:', Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.log('6. Error response:', errorText);
         if (response.status === 401) {
-          console.log('Token expired or invalid for superior fetch');
           setError('Your session has expired. Please login again.');
           navigate('/login');
           return;
@@ -111,11 +119,11 @@ function NewMail() {
       }
 
       const data = await response.json();
-      console.log('6. Response data:', data);
-      setSenderSuperior(data.Superior);
+      console.log('7. Response data:', data);
+      setSenderSuperior(data.SUPERIOR);
     } catch (error) {
       console.error('Error in fetchSenderSuperior:', error);
-      setError('Failed to fetch superior information');
+      setError('Failed to fetch Ssuperior information');
     }
   };
 
@@ -189,77 +197,73 @@ function NewMail() {
       }));
     }
   };
+// ...existing code...
 
-  const handleSend = async () => {
-    try {
-      setError('');
-      setSuccess('');
-      
-      // Debug: Check token
-      const token = localStorage.getItem('token');
-      console.log('Current token:', token);
-      
-      if (!token) {
-        console.log('No token found in localStorage');
-        setError('Please login again');
-        navigate('/login');
-        return;
-      }
+const sendMail = async () => {
+  try {
+    const token = localStorage.getItem('token');
+    
+    const mailFormData = new FormData();
+    mailFormData.append('to', JSON.stringify(formData.to));
+    mailFormData.append('cc', JSON.stringify(formData.cc));
+    mailFormData.append('subject', formData.subject);
+    mailFormData.append('body', formData.message);
+    mailFormData.append('isDraft', 'false');
 
-      // Validate recipients
-      const validationError = validateRecipients(formData.to + (formData.cc ? `,${formData.cc}` : ''));
-      if (validationError) {
-        setError(validationError);
-        return;
-      }
+    // Add attachments if any
+    attachments.forEach((file) => {
+      mailFormData.append('attachments', file);
+    });
 
-      // Check if superior is included
-      if (senderSuperior && !validateRecipients(formData.to + (formData.cc ? `,${senderSuperior}` : ''))) {
-        setSuperiorDialogOpen(true);
-        return;
-      }
+    const response = await fetch('http://192.168.100.236:5000/api/mail', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: mailFormData
+    });
 
-      const formData = new FormData();
-      formData.append('to', JSON.stringify(formData.to));
-      formData.append('cc', JSON.stringify(formData.cc));
-      formData.append('subject', formData.subject);
-      formData.append('body', formData.message);
-      formData.append('isDraft', 'false');
+    // ... rest of the sending logic
+  } catch (error) {
+    console.error('Error sending mail:', error);
+    setError(error.message || 'Failed to send mail');
+  }
+};
 
-      // Add attachments if any
-      attachments.forEach((file, index) => {
-        formData.append('attachments', file);
-      });
+const handleSend = async (e) => {
+  e.preventDefault(); // Prevent form submission
+  
+  setError('');
+  setSuccess('');
+  
+  const token = localStorage.getItem('token');
+  if (!token) {
+    setError('Please login again');
+    navigate('/login');
+    return;
+  }
 
-      console.log('Sending request with token:', token);
-      const response = await fetch('http://192.168.100.236:5000/api/mail', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
+  // Validate recipients
+  const isValid = await validateRecipients(formData.to + (formData.cc ? `,${formData.cc}` : ''));
+  if (!isValid) {
+    return;
+  }
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Server error response:', errorData);
-        if (response.status === 401) {
-          console.log('Token expired or invalid');
-          setError('Your session has expired. Please login again.');
-          navigate('/login');
-          return;
-        }
-        throw new Error(errorData.error || 'Failed to send mail');
-      }
-
-      const data = await response.json();
-      setSuccess('Mail sent successfully!');
-      navigate('/mail');
-    } catch (error) {
-      console.error('Error sending mail:', error);
-      setError(error.message || 'Failed to send mail');
+  // Check if superior needs to be included
+  if (senderSuperior) {
+    const toList = formData.to.split(',').map(r => r.trim());
+    const ccList = formData.cc ? formData.cc.split(',').map(r => r.trim()) : [];
+    
+    if (!toList.includes(senderSuperior) && !ccList.includes(senderSuperior)) {
+      setSuperiorDialogOpen(true);
+      return; // Stop here and wait for dialog response
     }
-  };
+  }
+
+  // If we get here, either superior is included or not required
+  await sendMail();
+};
+
 
   const handleSaveDraft = async () => {
     setError('');

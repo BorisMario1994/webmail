@@ -92,16 +92,16 @@ router.post('/', authenticateToken, upload.array('attachments'), async (req, res
       isDraft,
       files: req.files ? req.files.length : 0
     });
-
+    
     if (!recipients || !subject || !body) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    if (!req.user.UserID) {
+    if (!req.user.userId) {
       return res.status(401).json({ error: 'Invalid user information' });
     }
 
-    const senderId = req.user.UserID;
+    const senderId = req.user.userId;
     const pool = await poolPromise;
 
     // Start transaction
@@ -168,7 +168,7 @@ router.post('/', authenticateToken, upload.array('attachments'), async (req, res
 router.post('/draft', authenticateToken, upload.array('attachments'), async (req, res) => {
   try {
     const { recipients, subject, body } = req.body;
-    const senderId = req.user.UserID;
+    const senderId = req.user.userId;
     const pool = await poolPromise;
 
     // Start transaction
@@ -237,6 +237,7 @@ router.post('/validate-recipients', async (req, res) => {
     const { recipients } = req.body;
     const recipientList = recipients.split(',').map(r => r.trim()).filter(Boolean);
     
+    console.log('User information:', recipientList);
     if (recipientList.length === 0) {
       return res.status(400).json({ error: 'No recipients provided' });
     }
